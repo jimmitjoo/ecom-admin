@@ -14,6 +14,7 @@ export function ProductList() {
     const containerRef = useRef<HTMLDivElement>(null);
     const loaderRef = useRef<HTMLDivElement>(null);
     const { events, isConnected } = useWebSocket();
+    const [initialPageSize, setInitialPageSize] = useState(12);
 
     // Load initial products
     useEffect(() => {
@@ -101,13 +102,44 @@ export function ProductList() {
         };
     }, [hasMore, loading]);
 
+    // Beräkna initial sidstorlek baserat på skärmstorlek
+    useEffect(() => {
+        if (containerRef.current) {
+            const container = containerRef.current;
+            const containerWidth = container.clientWidth;
+            const viewportHeight = window.innerHeight;
+
+            // Uppdaterad korthöjd baserat på faktisk rendering
+            const cardHeight = 200; // Ökad från 120 för att matcha faktisk höjd
+
+            // Antal kolumner (3 på desktop, 1 på mobil)
+            const columns = containerWidth >= 768 ? 3 : 1;
+
+            // Beräkna rader som behövs för att fylla skärmen plus två extra rader
+            const rows = Math.ceil(viewportHeight / cardHeight) + 2;
+
+            // Beräkna totalt antal produkter som behövs
+            const productsNeeded = columns * rows;
+
+            // Ladda minst 24 produkter eller det beräknade antalet, beroende på vilket som är störst
+            setInitialPageSize(Math.max(24, productsNeeded));
+
+            // Om vi redan har produkter och de inte räcker för att fylla skärmen, ladda fler
+            if (products.length > 0 && products.length < productsNeeded) {
+                setPage(prev => prev + 1);
+            }
+        }
+    }, [products.length]); // Lägg till products.length som beroende
+
     async function loadProducts(pageNumber: number = 1) {
+        const pageSize = pageNumber === 1 ? initialPageSize : 12;
+
         if (pageNumber === 1) {
             setLoading(true);
         }
 
         try {
-            const response = await api.getProducts(pageNumber);
+            const response = await api.getProducts(pageNumber, pageSize);
             console.log('API Response:', response);
 
             setProducts(prevProducts =>
