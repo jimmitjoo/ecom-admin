@@ -1,8 +1,9 @@
 export interface APIResponse<T> {
     data: T;
-    meta?: {
-        total?: number;
-        page?: number;
-        limit?: number;
+    pagination?: {
+        current_page: number;
+        page_size: number;
+        total_items: number;
+        total_pages: number;
     };
 }

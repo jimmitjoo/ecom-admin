@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Package, Search } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { api } from '@/api/client';
@@ -9,37 +9,48 @@ import { useWebSocket } from '@/hooks/useWebSocket';
 export function ProductList() {
     const [products, setProducts] = useState<Product[]>([]);
     const [loading, setLoading] = useState(true);
+    const [hasMore, setHasMore] = useState(true);
+    const [page, setPage] = useState(1);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const loaderRef = useRef<HTMLDivElement>(null);
     const { events, isConnected } = useWebSocket();
 
     // Load initial products
     useEffect(() => {
-        loadProducts();
+        loadProducts(1);
     }, []);
+
+    useEffect(() => {
+        if (page > 1) {
+            loadProducts(page);
+        }
+    }, [page]);
 
     // Handle real-time updates
     useEffect(() => {
         if (!events.length) return;
 
-        // Hantera alla nya events på en gång
         setProducts(prevProducts => {
             let updatedProducts = [...prevProducts];
+            const seenIds = new Set(updatedProducts.map(p => p.id));
 
-            // Processa events i ordning (nyast till äldst)
             for (const event of events) {
                 switch (event.type) {
                     case 'product.created': {
-                        const productExists = updatedProducts.some(p => p.id === event.data.product!.id);
-                        if (!productExists) {
-                            updatedProducts = [event.data.product!, ...updatedProducts];
+                        if (page === 1 && event.data.product && !seenIds.has(event.data.product.id)) {
+                            updatedProducts = [event.data.product, ...updatedProducts];
+                            seenIds.add(event.data.product.id);
                         }
                         break;
                     }
                     case 'product.updated': {
-                        updatedProducts = updatedProducts.map(product =>
-                            product.id === event.data.product_id
-                                ? event.data.product!
-                                : product
-                        );
+                        if (event.data.product) {
+                            updatedProducts = updatedProducts.map(product =>
+                                product.id === event.data.product_id
+                                    ? event.data.product
+                                    : product
+                            );
+                        }
                         break;
                     }
                     case 'product.deleted': {
@@ -53,15 +64,64 @@ export function ProductList() {
 
             return updatedProducts;
         });
-    }, [events]);
+    }, [events, page]);
 
-    async function loadProducts() {
-        setLoading(true);
+    useEffect(() => {
+        console.log('Setting up IntersectionObserver');
+
+        const observer = new IntersectionObserver(
+            (entries) => {
+                console.log('Intersection callback triggered', {
+                    isIntersecting: entries[0]?.isIntersecting,
+                    hasMore,
+                    loading
+                });
+
+                const first = entries[0];
+                if (first.isIntersecting && hasMore && !loading) {
+                    console.log('Loading more products...');
+                    setPage(prev => prev + 1);
+                }
+            },
+            {
+                root: null, // använd viewport
+                threshold: 0,
+                rootMargin: '300px' // öka marginal för tidigare triggning
+            }
+        );
+
+        if (loaderRef.current) {
+            console.log('Observing loader element');
+            observer.observe(loaderRef.current);
+        }
+
+        return () => {
+            console.log('Cleaning up observer');
+            observer.disconnect();
+        };
+    }, [hasMore, loading]);
+
+    async function loadProducts(pageNumber: number = 1) {
+        if (pageNumber === 1) {
+            setLoading(true);
+        }
+
         try {
-            console.log('Fetching products...');
-            const data = await api.getProducts();
-            console.log('Received products:', data);
-            setProducts(data);
+            const response = await api.getProducts(pageNumber);
+            console.log('API Response:', response);
+
+            setProducts(prevProducts =>
+                pageNumber === 1
+                    ? response.data
+                    : [...prevProducts, ...response.data]
+            );
+
+            const totalPages = response.total_pages ?? 0;
+            const currentPage = response.page ?? 0;
+
+            setHasMore(currentPage < totalPages);
+            console.log('hasMore set to:', currentPage < totalPages,
+                '(current:', currentPage, 'total:', totalPages, ')');
         } catch (error) {
             console.error('Failed to load products:', error);
         } finally {
@@ -110,19 +170,8 @@ export function ProductList() {
                 </div>
             </div>
 
-            {/* Product Grid */}
-            {loading ? (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {[...Array(6)].map((_, i) => (
-                        <Card key={i} className="animate-pulse">
-                            <CardContent className="p-6">
-                                <div className="h-4 bg-gray-200 rounded w-3/4 mb-4" />
-                                <div className="h-4 bg-gray-200 rounded w-1/2" />
-                            </CardContent>
-                        </Card>
-                    ))}
-                </div>
-            ) : (
+            {/* Main content */}
+            <div ref={containerRef}>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {products.map(product => (
                         <Card
@@ -155,7 +204,19 @@ export function ProductList() {
                         </Card>
                     ))}
                 </div>
-            )}
+
+                <div
+                    ref={loaderRef}
+                    className="w-full py-12 flex justify-center"
+                    style={{ minHeight: '100px' }}
+                >
+                    {loading ? (
+                        <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                        <div className="w-6 h-6" />
+                    )}
+                </div>
+            </div>
         </div>
     );
 }

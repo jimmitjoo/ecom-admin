@@ -7,13 +7,24 @@ interface APIError extends Error {
     data?: any;
 }
 
+export interface APIResponse<T> {
+    data: T;
+    pagination?: {
+        current_page: number;
+        page_size: number;
+        total_items: number;
+        total_pages: number;
+    };
+}
+
 class APIClient {
     private async request<T>(
         path: string,
         options: RequestInit = {}
-    ): Promise<T> {
+    ): Promise<APIResponse<T>> {
         const url = `${API_BASE}${path}`;
-        console.log('Making API request to:', url); // Debug log
+        console.log('Making API request to:', url);
+
         const headers = {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
@@ -27,8 +38,7 @@ class APIClient {
 
         try {
             const response = await fetch(url, config);
-
-            console.log('API Response:', response.status); // Debug log
+            console.log('API Response:', response.status);
 
             if (!response.ok) {
                 const error: APIError = new Error('API Error');
@@ -41,16 +51,15 @@ class APIClient {
                 throw error;
             }
 
-            // Handle 204 No Content
             if (response.status === 204) {
-                return null as T;
+                return { data: null as T };
             }
 
-            const data = await response.json();
-            console.log('API Response data:', data); // Debug log
-            return data;
+            const responseData = await response.json();
+            console.log('API Response data:', responseData);
+            return responseData;
         } catch (error) {
-            console.error('API Request failed:', error); // Debug log
+            console.error('API Request failed:', error);
             throw error;
         }
     }
@@ -78,20 +87,24 @@ class APIClient {
     }
 
     // Product specific methods
-    async getProducts(): Promise<Product[]> {
-        return this.get<Product[]>('/products');
+    async getProducts(page: number = 1, size: number = 12): Promise<APIResponse<Product[]>> {
+        const response = await this.get<APIResponse<Product[]>>(`/products?page=${page}&size=${size}`);
+        return response;
     }
 
     async getProduct(id: string): Promise<Product> {
-        return this.get<Product>(`/products/${id}`);
+        const response = await this.get<Product>(`/products/${id}`);
+        return response.data;
     }
 
     async createProduct(product: Omit<Product, 'id' | 'created_at' | 'updated_at'>): Promise<Product> {
-        return this.post<Product>('/products', product);
+        const response = await this.post<Product>('/products', product);
+        return response.data;
     }
 
     async updateProduct(id: string, product: Partial<Product>): Promise<Product> {
-        return this.put<Product>(`/products/${id}`, product);
+        const response = await this.put<Product>(`/products/${id}`, product);
+        return response.data;
     }
 
     async deleteProduct(id: string): Promise<void> {
