@@ -38,7 +38,7 @@ export function ProductList() {
             for (const event of events) {
                 switch (event.type) {
                     case 'product.created': {
-                        if (page === 1 && event.data.product && !seenIds.has(event.data.product.id)) {
+                        if (event.data.product && !seenIds.has(event.data.product.id)) {
                             updatedProducts = [event.data.product, ...updatedProducts];
                             seenIds.add(event.data.product.id);
                         }
@@ -65,7 +65,7 @@ export function ProductList() {
 
             return updatedProducts;
         });
-    }, [events, page]);
+    }, [events]);
 
     useEffect(() => {
         console.log('Setting up IntersectionObserver');
@@ -109,27 +109,31 @@ export function ProductList() {
             const containerWidth = container.clientWidth;
             const viewportHeight = window.innerHeight;
 
-            // Uppdaterad korthöjd baserat på faktisk rendering
-            const cardHeight = 200; // Ökad från 120 för att matcha faktisk höjd
-
-            // Antal kolumner (3 på desktop, 1 på mobil)
+            const cardHeight = 200;
             const columns = containerWidth >= 768 ? 3 : 1;
-
-            // Beräkna rader som behövs för att fylla skärmen plus två extra rader
             const rows = Math.ceil(viewportHeight / cardHeight) + 2;
-
-            // Beräkna totalt antal produkter som behövs
             const productsNeeded = columns * rows;
 
-            // Ladda minst 24 produkter eller det beräknade antalet, beroende på vilket som är störst
             setInitialPageSize(Math.max(24, productsNeeded));
+        }
+    }, []);
 
-            // Om vi redan har produkter och de inte räcker för att fylla skärmen, ladda fler
-            if (products.length > 0 && products.length < productsNeeded) {
+    // Separat useEffect för att hantera när vi behöver ladda fler produkter
+    useEffect(() => {
+        if (containerRef.current && products.length > 0) {
+            const container = containerRef.current;
+            const containerWidth = container.clientWidth;
+            const viewportHeight = window.innerHeight;
+            const cardHeight = 200;
+            const columns = containerWidth >= 768 ? 3 : 1;
+            const rows = Math.ceil(viewportHeight / cardHeight) + 2;
+            const productsNeeded = columns * rows;
+
+            if (products.length < productsNeeded && hasMore && !loading) {
                 setPage(prev => prev + 1);
             }
         }
-    }, [products.length]); // Lägg till products.length som beroende
+    }, [products.length, hasMore, loading]);
 
     async function loadProducts(pageNumber: number = 1) {
         const pageSize = pageNumber === 1 ? initialPageSize : 12;
